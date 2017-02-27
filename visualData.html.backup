@@ -1,0 +1,231 @@
+<html> 
+<head>
+<script src="https://d3js.org/d3.v4.js"></script>
+
+</head>
+<body>
+<input type="file",id="csvfile", onchange = "loadcsv()", name="selectcsvfile"> select csvfile </input>
+<input type="file",id="reffile", onchange = "loadref()", name="selectreffile"> select reffile </input>
+
+<button onclick="progress()">visual</button>
+<script type="text/javascript">
+/*
+	var csvdata = [];
+	d3.csv("CEU_1_5285300.csv", function(d) {
+		return {
+			allID : +d.allID,
+			groupID : +d.groupID,
+			groupName : d.groupName,
+			Direction : d.Direction,
+			startPosition : +d.startPosition,
+			mappingquality : +d.mappingquality,
+			cigar : d.cigar,
+			editcigar : d.editcigar,
+			baseread : d.baseread
+		};
+	}, function(data) {
+		console.log(data);
+		csvdata = data;
+			if (--remaining)dowork();
+	});
+*/
+	var csvfile = new FileReader();
+	var reffile = new FileReader();
+	var drawboardx = 0;
+	var drawboardy = 100;
+	var nowx = drawboardx;
+	var nowy = drawboardy;
+	var dstep = 10;//base width
+	var dwidth = 10;//chrome track width
+	var dinterval = 4
+	var dperson = 60;//distance between person
+	function loadcsv() {
+		var file = document.querySelector("input[name=selectcsvfile]").files[0];
+		if (file) csvfile.readAsText(file);
+	}
+	
+	function loadref() {
+		var file = document.querySelector("input[name=selectreffile]").files[0];
+		if (file) reffile.readAsText(file);
+	}
+	
+	
+	
+	function progress(){
+
+		var refdata = [];
+		var csvdata = [];
+		//document.write(csvfile.result);
+		csvdata = d3.csvParse(csvfile.result, function(d) {
+			return {
+				allID : +d.allID,
+				groupID : +d.groupID,
+				groupName : d.groupName,
+				Direction : d.Direction,
+				startPosition : +d.startPosition,
+				endPosition : +d.endPosition,
+				mappingquality : +d.mappingquality,
+				cigar : d.cigar,
+				editcigar : d.editcigar,
+				baseread : d.baseread
+			};
+		});
+		
+		refdata = d3.csvParse(reffile.result, function(d) {
+			return {
+				chrom : d.chrom,
+				visualPositon : +d.visualPositon,
+				startPosition : +d.startPosition,
+				endPosition : +d.endPosition,
+				refread : d.refread
+			}
+		});
+		//console.log(refdata);
+		//console.log(csvdata);
+		display();
+		
+		
+		function display () {
+			//document.write(refdata.endPosition);
+			var alldata = dowork();
+			var pathdata = alldata.action;
+			var groupnum = alldata.threeidi;
+			var xline1 = d3.scaleLinear().domain([refdata[0].startPosition, refdata[0].endPosition]).range([drawboardx, (refdata[0].endPosition+1-refdata[0].startPosition)*dstep+drawboardx]);
+			var xline2 = d3.axisTop().scale(xline1).ticks(20).tickFormat(d3.format(",.0f"))/*.tickValues(refdata[0].startPosition,refdata[0].visualPositon,refdata[0].endPosition)*/;
+			//var xline2 = d3.axisTop().scale(xline1).tickFormat(d3.format(",.0f")).tickValues(refdata[0].visualPositon);
+			
+			var alltrack1 = d3.select('body').append('svg').attr('width', (refdata[0].endPosition+1-refdata[0].startPosition)*dstep+drawboardx).attr('height', (csvdata.length+1)*(dwidth+dinterval)+drawboardy);
+			
+			alltrack1.append('g').attr('class', 'axis').attr('transform', 'translate(' + drawboardx + ',' + drawboardy + ')').call(xline2);
+			
+			var alltrack2 = alltrack1.append('g').selectAll('.trackline').data(pathdata).enter().append('path').attr('d', function(data){return data.d}).attr('fill', function(d){return d.fill}).attr('stroke', function(d){return d.stroke}).attr('stroke_width', function(d){return d.stroke_width});
+			var viewposition = alltrack1.append('g').append('path').attr('d', 'M' + ((refdata[0].visualPositon-refdata[0].startPosition)*dstep+drawboardx) + ',' + (drawboardy+dinterval+dwidth) + 'h' + dstep + 'v' + (drawboardy+(dwidth+dinterval)*(csvdata.length+1)) + 'h' + (0-dstep) + 'z').attr('fill', 'none').attr('stroke','blue').attr('stroke_width',5);
+		}
+		
+		
+		
+		function dowork() {
+			/*document.write(csvdata.length);
+			for(var i = 0; i < csvdata.length; i++) 
+				document.write(csvdata[i].groupID + "\r\n");
+			for(var i = 0; i < refdata.length; i++) 
+				document.write(refdata[i].startPosition);*/
+			var visualpositon = refdata[0].visualPositon;
+			var startPosition = refdata[0].startPosition;
+			var endPosition = refdata[0].endPosition;
+			var refread = refdata[0].refread;
+			var chrom = refdata[0].chrom;
+			var action = [];
+			var countgroup = 0;
+			var threeidi = [];// count number of three individual
+			for(var i = 0; i < csvdata.length; i++) {
+				if (csvdata.groupID == 1) {
+					threeidi.push(countgroup);
+					countgroup = 1;
+				} else {
+					countgroup++;
+				}
+				
+				var editcigar = csvdata[i].editcigar.split(";");//such as R:1;S:30;M:71 to R:1 S:30 M:71 
+				nowy = nowy + dinterval + dwidth;//caculate y position 
+				nowx = drawboardx + dstep * (csvdata[i].startPosition - startPosition);//caculate x position
+				
+				for(var j = 0; j < editcigar.length; j++) {// 
+					var opera = editcigar[j].split(":");//such as R:1 to R  1
+					var opernumber = +opera[1];
+					var d;
+					var fill;
+					var stroke;
+					var strokeWidth;
+					if (opera[0] == 'N') {//skip
+						nowx = nowx + dstep * opernumber;
+						fill = "white"
+						stroke = "black";
+						strokeWidth = "3";
+					} else if (opera[0] == 'H') {//hard clip
+						/*d = "M" + nowx + "," + nowy + "h" + dstep * opernumber + "v" + dwidth + "h" + (0-opernumber*dstep) + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "yellow";
+						stroke = "black";
+						strokeWidth = "3";*/
+						continue;
+					} else if (opera[0] == 'M') {//match or not match
+						d = "M" + nowx + "," + nowy + "h" + dstep*opernumber + "v" + dwidth + "h" + (0-opernumber*dstep) + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "gray";
+						stroke = "black"; 
+						strokeWidth = "3";
+						//continue;
+					} else if (opera[0] == 'I') {//insert  !!!
+						d = "M" + nowx + "," + nowy + "h" + (0-dstep/2) + "v" + dwidth + "h" + dstep/2 + "z";
+						//nowx = nowx + dstep*opernumber/2;
+						fill = "red";
+						stroke =  "black";
+						strokeWidth = "3";
+					} else if (opera[0] == 'D') {//delet
+						d = "M" + nowx + "," + (nowy + dwidth/2) + "h" + dstep*opernumber + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "red";
+						stroke = "black";
+						strokeWidth = "3";
+					} else if (opera[0] == 'S') {//soft clip
+						/*d = "M" + nowx + "," + nowy + "h" + dstep*opernumber + "v" + dwidth + "h" + (0-opernumber*dstep) + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "yellow";
+						stroke =  "black";
+						strokeWidth = "3";*/
+						continue;
+					} else if (opera[0] == 'P') {//paddding
+						d = "M" + nowx + "," + nowy + "h" + dstep*opernumber + "v" + dwidth + "h" + (0-opernumber*dstep) + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "green";
+						stroke =  "black";
+						strokeWidth = "3";
+					} else if (opera[0] == 'X') {//mismatch
+						d = "M" + nowx + "," + nowy + "h" + dstep*opernumber + "v" + dwidth + "h" + (0-opernumber*dstep) + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "gray";
+						stroke =  "black";
+						strokeWidth = "3";
+					} else if (opera[0] == '=') {//match
+						d = "M" + nowx + "," + nowy + "h" + dstep*opernumber + "v" + dwidth + "h" + (0-opernumber*dstep) + "z";
+						nowx = nowx + dstep*opernumber;
+						fill = "gray";
+						stroke =  "black";
+						strokeWidth = "3";
+					} else if (opera[0] == 'R') {//Reverse chain
+						d = "M" + nowx + "," + nowy + "l" + (0-dstep)/2 + "," + dwidth/2 + "l" + dstep/2 + "," + dwidth/2 + "z";
+						//nowx = nowx + dstep*opernumber;
+						fill = "blue";
+						stroke =  "black";
+						strokeWidth = "3";
+					} else if (opera[0] == 'F') {//forward chain
+						d = "M" + nowx + "," + nowy + "l" + dstep/2 + "," + dwidth/2 + "l" + (0-dstep)/2 + "," + dwidth/2 + "z";
+						//nowx = nowx + dstep*opernumber;
+						fill = "blue";
+						stroke =  "black";
+						strokeWidth = "3";
+					} else {
+						
+					}
+					
+					action.push({
+						d : d,
+						fill : fill,
+						stroke : stroke,
+						stroke_width : strokeWidth
+					});
+				}
+			}
+			
+			return {action : action, threeidi : threeidi};
+		}
+	}
+	
+	
+
+	
+</script>
+
+</body>
+</html>
